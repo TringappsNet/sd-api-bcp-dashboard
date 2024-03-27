@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('./pool');
 
-router.post('/', async (req, res) => {
+router.delete('/', async (req, res) => {
   const { ids } = req.body;
 
   if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string')) {
