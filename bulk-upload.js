@@ -3,68 +3,99 @@ const router = express.Router();
 const pool = require('./pool');
 const bodyParser = require('body-parser');
 const moment = require('moment');
+const columnMap = require('./column-map');
+const checkForDuplicates = require('./validate-duplicates');
 
-const columnMap = {
-    "Month/Year": "MonthYear",
-    "Company Name": "CompanyName",
-    "Revenue Actual": "RevenueActual",
-    "Revenue Budget": "RevenueBudget",
-    "Gross Profit Actual": "GrossProfitActual",
-    "Gross Profit Budget": "GrossProfitBudget",
-    "SG & A Actual": "SGAActual",
-    "SG & A Budget": "SGABudget",
-    "EBITDA Actual": "EBITDAActual",
-    "EBITDA Budget": "EBITDABudget",
-    "CapEx Actual": "CapExActual",
-    "CapEx Budget": "CapExBudget",
-    "Fixed Assets (Net) Actual": "FixedAssetsNetActual",
-    "Fixed Assets (Net) Budget": "FixedAssetsNetBudget",
-    "Cash Actual": "CashActual",
-    "Cash Budget": "CashBudget",
-    "Total Debt Actual": "TotalDebtActual",
-    "Total Debt Budget": "TotalDebtBudget",
-    "Accounts Receivable Actual": "AccountsReceivableActual",
-    "Accounts Receivable Budget": "AccountsReceivableBudget",
-    "Accounts Payable Actual": "AccountsPayableActual",
-    "Accounts Payable Budget": "AccountsPayableBudget",
-    "Inventory Actual": "InventoryActual",
-    "Inventory Budget": "InventoryBudget",
-    "Employees Actual": "EmployeesActual",
-    "Employees Budget": "EmployeesBudget",
-    "Quarter": "Quarter"
-  };
+router.post('/', bodyParser.json(), async (req, res) => {
+  const { userData, overrideExisting, newDatas } = req.body;
+  const { username, organization } = userData;
 
-  router.post('/', bodyParser.json(), async (req, res) => {
-    const { userData, data } = req.body; // Destructure userData and data from req.body
-    const { username, organization } = userData; // Extract username and organization from userData
-  
-    if (!Array.isArray(data) || !data.every(item => typeof item === 'object')) {
-      return res.status(400).json({ message: 'Invalid JSON body format' });
-    }
-  
-    try {
-      const connection = await pool.getConnection();
-      await connection.beginTransaction();
-  
-      const insertPromises = data.map(row => {
-        const values = [organization, username, ...Object.values(row).map(value => typeof value === 'string' ? value.replace(/ /g, '') : value)];
-        const columns = ['Organization', 'UserName', ...Object.keys(row).map(key => columnMap[key])];
+  if (!Array.isArray(newDatas) || !newDatas.every(item => typeof item === 'object')) {
+    return res.status(400).json({ message: 'Invalid JSON body format for new data' });
+  }
 
-        console.log('Inserting row:', values); 
+  try {
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
 
-        const query1 = 'INSERT INTO Portfolio_Companies_format (' + columns.join(', ') + ') VALUES (?)';
-        return connection.query(query1, [values]);
+    const columns = ['Organization', 'UserName', ...Object.keys(newDatas[0]).map(key => columnMap[key])];
+
+    const formatDateValue = (value, key) => {
+      if (key === 'Month/Year') {
+        const dateParts = value.split('-');
+        return `${dateParts[0]}-${dateParts[1]}-01 00:00:00`;
+      }
+      return value;
+    };
+
+    // Only insert new data if overrideExisting is null
+    if (overrideExisting === null) {
+      const insertPromises = newDatas.map(async row => {
+        const values = [organization, username, ...Object.values(row).map((value, index) => formatDateValue(value, Object.keys(row)[index]))];
+        console.log('Inserting new record:', row);
+        const insertQuery = `INSERT INTO Portfolio_Companies_format (${columns.join(', ')}) VALUES (?)`;
+        await connection.query(insertQuery, [values]);
+        console.log(values);
       });
-  
       await Promise.all(insertPromises);
-      await connection.commit();
-      connection.release();
-  
-      res.status(200).json({ message: 'Data uploaded successfully' });
-    } catch (error) {
-      console.error('Error inserting data:', error);
-      res.status(500).json({ message: 'Error inserting data' });
-    }
+    } else {
+      // Update existing rows
+        const updatePromises = [];
+        for (let i = 1; i < overrideExisting.length; i++) {
+          const row = overrideExisting[i];
+          const rowId = overrideExisting[0].id; // Extract the ID from the first object
+          const values = [organization, username, ...Object.values(row).map((value, index) => formatDateValue(value, Object.keys(row)[index]))];
+          console.log('Updating existing record with ID:', rowId, row);
+          const updateQuery = `UPDATE Portfolio_Companies_format SET ${columns.slice(2).map((col, index) => `${col} = ?${index === columns.slice(2).length - 1 ? '' : ','}`).join(' ')} WHERE ID = ?`;
+          console.log('Update query:', updateQuery);
+
+          const updatePromise = new Promise((resolve, reject) => {
+            connection.query(updateQuery, [...values.slice(2), rowId], (error, results) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(results);
+              }
+            });
+          
+          });
+          
+
+  updatePromises.push(updatePromise);
+
+  updatePromise.then(result => {
+    console.log('Update result:', result);
+    console.log('Status: updated');
+  }).catch(error => {
+    console.error('Update error:', error);
+    console.log('Status: error');
   });
-  
-module.exports = router, columnMap;
+
+  console.log('Update values:', [...values.slice(2), rowId]);
+}
+
+await Promise.all(updatePromises);
+
+      // Insert new rows
+      const insertPromises = newDatas.map(async row => {
+        const values = [organization, username, ...Object.values(row).map((value, index) => formatDateValue(value, Object.keys(row)[index]))];
+        console.log('Inserting new record:', row);
+        const insertQuery = `INSERT INTO Portfolio_Companies_format (${columns.join(', ')}) VALUES (?)`;
+        await connection.query(insertQuery, [values]);
+      });
+
+      await Promise.all(insertPromises);
+    }
+
+
+    await connection.commit();
+    connection.release();
+
+    res.status(200).json({ message: 'Data uploaded successfully' });
+  } catch (error) {
+    console.error('Error inserting/updating data:', error);
+    res.status(500).json({ message: 'Error inserting/updating data' });
+  }
+});
+
+module.exports = router;
