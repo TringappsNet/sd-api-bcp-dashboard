@@ -15,9 +15,9 @@
  *       - in: query
  *         name: organization
  *         schema:
- *           type: integer
+ *           type: string
  *         required: false
- *         description: The organization ID for which to retrieve portfolio data
+ *         description: The organization Name for which to retrieve portfolio data
  *     responses:
  *       '200':
  *         description: Portfolio data retrieved successfully
@@ -31,7 +31,6 @@
  *                   fieldName:
  *                     type: string
  *                     description: Description of the field
- *                   # Add other properties here
  *                   MonthYear:
  *                     type: string
  *                     format: date
@@ -48,9 +47,14 @@
  *                   description: Error message
  */
 
+
 const express = require('express');
 const router = express.Router();
-const pool = require('./pool');
+const pool = require('../../utils/pool');
+const {successMessages} = require('../../utils/successMessages');
+const {errorMessages} = require('../../utils/errorMessages');
+
+
 
 router.get('/', async (req, res) => {
   try {
@@ -66,7 +70,7 @@ router.get('/', async (req, res) => {
     res.status(200).json(data);
   } catch (error) {
     console.error('Error retrieving data:', error);
-    res.status(500).json({ message: 'Error retrieving data' });
+    res.status(500).json({ message: errorMessages.RETRIEVAL_ERROR });
   }
 });
 

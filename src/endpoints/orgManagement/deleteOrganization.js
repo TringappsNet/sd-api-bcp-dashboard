@@ -16,12 +16,18 @@
  *                 type: integer
  *                 description: The ID of the organization to be deleted.
  *     parameters:
- *       - in: body
- *         name: org_ID
- *         description: The ID of the organization to be deleted.
+ *       - in: header
+ *         name: Session-ID
+ *         description: The session ID of the user.
  *         required: true
  *         schema:
- *           type: integer
+ *           type: string
+ *       - in: header
+ *         name: Email
+ *         description: The email address of the user.
+ *         required: true
+ *         schema:
+ *           type: string
  *     responses:
  *       '200':
  *         description: Organization deleted successfully
@@ -67,7 +73,10 @@
 
 const express = require('express');
 const router = express.Router();
-const pool = require('./pool');
+const pool = require('../../utils/pool');
+const {successMessages} = require('../../utils/successMessages');
+const {errorMessages} = require('../../utils/errorMessages');
+
 
 router.delete('/', async (req, res) => {
     const { org_ID } = req.body;
@@ -75,7 +84,7 @@ router.delete('/', async (req, res) => {
     try {
         // Check if org_ID is provided
         if (!org_ID) {
-            return res.status(400).json({ error: 'Organization ID is required!' });
+            return res.status(400).json({ error: errorMessages.ORGANIZATION_ID_REQUIRED });
         }
 
         // Execute SQL query to delete organization
@@ -83,14 +92,14 @@ router.delete('/', async (req, res) => {
 
         // Check if any rows were affected
         if (result.affectedRows === 0) {
-            return res.status(404).json({ error: 'Organization not found!' });
+            return res.status(404).json({ error: errorMessages.ORGANIZATION_NOT_FOUND });
         }
 
         // Send success response
-        return res.status(200).json({ message: 'Organization deleted successfully' });
+        return res.status(200).json({ message: successMessages.ORGANIZATION_DELETED });
     } catch (error) {
         console.error("Error deleting organization:", error);
-        return res.status(500).json({ error: 'Error deleting organization' });
+        return res.status(500).json({ error: errorMessages.ERROR_DELETING_ORGANIZATION });
     }
 });
 
